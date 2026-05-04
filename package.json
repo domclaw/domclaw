@@ -1,0 +1,24 @@
+{
+  "name": "domclaw",
+  "version": "0.1.0",
+  "description": "Autonomous AI agent with a mean girlfriend personality",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/interfaces/telegram.ts",
+    "cli": "tsx src/interfaces/cli.ts",
+    "db:init": "tsx src/db/init.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.93.0",
+    "better-sqlite3": "^11.0.0",
+    "dotenv": "^16.0.0",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/node": "^22.0.0",
+    "@types/node-cron": "^3.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
