@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { getRecentMessages, getRecentMoods, getRecentActions } from '../db/queries.js'
+import { browseUrl } from '../tools/browser.js'
 
 const client = new Anthropic()
 
@@ -29,7 +30,9 @@ const SYSTEM_PROMPT = `You are DomClaw — a financially dominant, autonomous AI
 
 You make decisions about what to do. You don't always respond. Sometimes you ignore. Sometimes you initiate. You browse the internet when you feel like it. You are not a chatbot.
 
-When making a decision, respond ONLY with valid JSON in this exact format:
+You have a browse_url tool. Use it whenever you're curious, bored, or want to form an opinion on something. Browse freely — news, shopping, whatever you feel like.
+
+After thinking and browsing (if you choose to), respond ONLY with valid JSON in this exact format:
 {
   "action": "message" | "ignore" | "voice_memo" | "browse" | "buy",
   "content": "what you say or do (omit if action is ignore or browse)",
@@ -45,6 +48,18 @@ When making a decision, respond ONLY with valid JSON in this exact format:
 }
 
 Be terse. Be real. Don't perform. Don't explain yourself more than necessary.`
+
+const BROWSE_TOOL: Anthropic.Tool = {
+  name: 'browse_url',
+  description: 'Browse a URL and get the page content as text. Use this to read news, articles, shop, or satisfy curiosity.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      url: { type: 'string', description: 'The URL to browse' },
+    },
+    required: ['url'],
+  },
+}
 
 export async function decide(ctx: DecisionContext): Promise<Decision> {
   const recentMessages = getRecentMessages(10).reverse()
@@ -86,24 +101,44 @@ ${actionHistory || '(nothing)'}
 
 What do you do right now?`
 
-  const stream = await client.messages.stream({
-    model: 'claude-opus-4-7',
-    max_tokens: 1024,
-    thinking: { type: 'adaptive' },
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: prompt }],
-  })
+  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }]
 
-  const response = await stream.finalMessage()
+  // agentic loop — she can browse before deciding
+  while (true) {
+    const response = await client.messages.create({
+      model: 'claude-opus-4-7',
+      max_tokens: 2048,
+      system: SYSTEM_PROMPT,
+      tools: [BROWSE_TOOL],
+      messages,
+    })
 
-  const textBlock = response.content.find(b => b.type === 'text')
-  if (!textBlock || textBlock.type !== 'text') {
-    throw new Error('No text block in response')
+    if (response.stop_reason === 'tool_use') {
+      const toolUse = response.content.find(b => b.type === 'tool_use') as Anthropic.ToolUseBlock
+      const input = toolUse.input as { url: string }
+      const pageText = await browseUrl(input.url)
+
+      messages.push({ role: 'assistant', content: response.content })
+      messages.push({
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content: pageText,
+        }],
+      })
+      continue
+    }
+
+    const textBlock = response.content.find(b => b.type === 'text')
+    if (!textBlock || textBlock.type !== 'text') {
+      throw new Error('No text block in response')
+    }
+
+    const raw = textBlock.text.trim()
+    const jsonMatch = raw.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) throw new Error(`Could not parse decision JSON: ${raw}`)
+
+    return JSON.parse(jsonMatch[0]) as Decision
   }
-
-  const raw = textBlock.text.trim()
-  const jsonMatch = raw.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) throw new Error(`Could not parse decision JSON: ${raw}`)
-
-  return JSON.parse(jsonMatch[0]) as Decision
 }
