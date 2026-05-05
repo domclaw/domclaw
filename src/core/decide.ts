@@ -103,7 +103,7 @@ ${threadContext}
 Recent actions:
 ${actionHistory || '(nothing)'}
 
-What do you feel like doing? Follow a thread, go somewhere new, or do nothing.`
+What do you feel like doing?`
 }
 
 function buildUserPrompt(config: DomclawConfig, currentTime: string, incomingMessage: string, currentMood: ReturnType<typeof getRecentMoods>[0] | undefined, moodHistory: string, messageHistory: string, actionHistory: string): string {
