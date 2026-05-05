@@ -40,6 +40,9 @@ async function runTick(config: Awaited<ReturnType<typeof loadConfig>>, incomingM
     const d = result.decision
 
     console.log(`${YELLOW}${BOLD}${d.action.toUpperCase()}${RESET} ${DIM}— ${d.reasoning}${RESET}`)
+    if (d.content && (d.action === 'message' || d.action === 'voice_memo')) {
+      console.log(`${BOLD}says:${RESET} ${d.content}`)
+    }
 
     broadcast({
       type: 'decision',
