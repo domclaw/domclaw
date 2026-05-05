@@ -111,10 +111,9 @@ export function upsertInterest(topic: string, depth: number, threads: string[], 
 }
 
 export function decayInterests(): void {
-  // decay depth by 1 for anything not engaged this tick
   db.prepare(`
     UPDATE interests
-    SET depth = depth - 1,
+    SET depth = MAX(0, depth - 1),
         status = CASE WHEN depth - 1 <= 0 THEN 'dead' WHEN depth - 1 <= 3 THEN 'cooling' ELSE 'active' END
     WHERE last_engaged < datetime('now', '-4 minutes')
   `).run()
