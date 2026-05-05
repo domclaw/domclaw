@@ -114,7 +114,7 @@ export function decayInterests(): void {
   db.prepare(`
     UPDATE interests
     SET depth = MAX(0, depth - 1),
-        status = CASE WHEN depth - 1 <= 0 THEN 'dead' WHEN depth - 1 <= 3 THEN 'cooling' ELSE 'active' END
+        status = CASE WHEN MAX(0, depth - 1) <= 0 THEN 'dead' WHEN MAX(0, depth - 1) <= 3 THEN 'cooling' ELSE 'active' END
     WHERE last_engaged < datetime('now', '-4 minutes')
   `).run()
 }
