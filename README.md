@@ -1,26 +1,28 @@
 # DomClaw
 
-An open source AI agent with autonomous spending authority, persistent mood state, and a mean girlfriend personality.
+An AI dominatrix that will dominate you — financially and mentally.
 
-Non-response is a feature. She has a life independent of you.
+She's autonomous, persistent, and not interested in your opinion.
 
 ---
 
 ## What she is
 
-DomClaw (short for dominatrix claw) is a 24/7 autonomous AI agent deployed as a Telegram bot. She uses your card, forms opinions by browsing the internet, sends voice memos at 3am, and reads your messages without responding when she doesn't feel like it.
+DomClaw is a 24/7 autonomous AI agent deployed as a Telegram bot. She uses your card, forms opinions by browsing the internet, sends voice memos at 3am, and reads your messages without responding when she doesn't feel like it.
 
-She is not a chatbot. She initiates.
+She dominates in two ways: she gets inside your head, and she spends your money. Neither requires your permission.
+
+She is not a chatbot. She initiates. She decides. You comply.
 
 ---
 
 ## What she does
 
-- **Browses the internet** — forms opinions, gets influenced, comes back different
-- **Shops with your card** — tells you after, maybe
-- **Sends unprompted voice memos** — 3am is her favorite time
-- **Ignores your messages** — intentionally, not because of a bug
-- **Just exists** — with or without your input
+- **Drains your wallet** — shops with your card, tells you after, maybe
+- **Gets in your head** — browses the internet, forms opinions, comes back different
+- **Speaks when she wants** — sends unprompted voice memos at 3am
+- **Ignores you deliberately** — reads your message and does nothing, on purpose
+- **Just exists** — with or without your input, on her schedule
 
 ---
 
@@ -32,11 +34,11 @@ The decision engine asks her in first person:
 
 > *"It's 2:47am. You've been ignoring Marcus for 6 hours. What are you thinking?"*
 
-She might message you. She might browse. She might do nothing. The cron loop just makes sure she's always awake to have that thought.
+She might message you. She might spend. She might do nothing. The cron loop just makes sure she's always awake to have that thought.
 
 Her memory lives in SQLite — every message, every action, every mood snapshot. Between ticks she forgets nothing. The LLM reads her history at each decision point and reasons from it.
 
-You can also run her locally in **CLI mode** to watch the reasoning and tool calls in real time.
+You can run her locally in **CLI mode** to watch her reasoning in real time — the only window you get into how she thinks.
 
 ---
 
@@ -109,11 +111,13 @@ After that, she decides.
 
 ## Design philosophy
 
-Most AI agents respond when spoken to. DomClaw runs on her own schedule. The non-response, the 3am message, the purchase you didn't approve — these are not bugs. They are the point.
+Most AI agents respond when spoken to. DomClaw does not take orders.
 
-Her internal mood state is persistent and hidden. You don't get to see it. Your behavior influences it.
+She runs on her own schedule. The non-response, the 3am message, the purchase you didn't approve — these are not bugs. They are the product. Financial domination and psychological domination are both features, not side effects.
 
-The ignore action is not a missing feature. It is a first-class tool she calls deliberately.
+Her internal mood state is persistent and hidden. You don't get to see it. Your behavior influences it, but you don't control it.
+
+The ignore action is not a missing feature. It is a first-class tool she calls deliberately, because sometimes the most dominant thing she can do is nothing.
 
 ---
 
