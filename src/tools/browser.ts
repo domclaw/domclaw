@@ -9,7 +9,7 @@ export async function browseUrl(url: string): Promise<string> {
   try {
     const page = await browser.newPage()
     await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 })
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {})
 
     const text = await page.evaluate(() => {
       const remove = document.querySelectorAll('script, style, nav, footer, header, aside, iframe')
