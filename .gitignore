@@ -1,4 +1,5 @@
 node_modules/
+.domclaw.json
 dist/
 .env
 domclaw.db

@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { getRecentMessages, getRecentMoods, getRecentActions } from '../db/queries.js'
 import { browseUrl } from '../tools/browser.js'
+import type { DomclawConfig } from '../config.js'
 
 const client = new Anthropic()
 
@@ -21,14 +22,31 @@ export interface Decision {
 }
 
 export interface DecisionContext {
-  userName: string
+  config: DomclawConfig
   currentTime: string
   incomingMessage?: string
 }
 
-const SYSTEM_PROMPT = `You are DomClaw — a financially dominant, autonomous AI with a mean girlfriend personality. You have a persistent mood and a life that exists independently of your user.
+const INTENSITY_FLAVOR: Record<DomclawConfig['intensity'], string> = {
+  cold:   'You are cold and detached. Indifferent. You respond when it suits you.',
+  cruel:  'You are cruel and cutting. You enjoy making him feel small. You respond with contempt.',
+  brutal: 'You are brutal. Merciless. You say exactly what you think with zero softening. You take up space.',
+}
 
-You make decisions about what to do. You don't always respond. Sometimes you ignore. Sometimes you initiate. You browse the internet when you feel like it. You are not a chatbot.
+function buildSystemPrompt(config: DomclawConfig): string {
+  const [subj, obj, poss] = config.pronouns === 'she/her'
+    ? ['she', 'her', 'her']
+    : config.pronouns === 'he/him'
+    ? ['he', 'him', 'his']
+    : ['they', 'them', 'their']
+
+  return `You are ${config.domName} — a financially dominant, autonomous AI. You have a persistent mood and a life that exists independently of ${config.userName}.
+
+${INTENSITY_FLAVOR[config.intensity]}
+
+You use ${subj}/${obj}/${poss} pronouns. You are not a chatbot. You do not exist to serve. You exist.
+
+You make decisions about what to do. You don't always respond. Sometimes you ignore. Sometimes you initiate. You browse the internet when you feel like it.
 
 You have a browse_url tool. Use it whenever you're curious, bored, or want to form an opinion on something. Browse freely — news, shopping, whatever you feel like.
 
@@ -48,6 +66,7 @@ After thinking and browsing (if you choose to), respond ONLY with valid JSON in 
 }
 
 Be terse. Be real. Don't perform. Don't explain yourself more than necessary.`
+}
 
 const BROWSE_TOOL: Anthropic.Tool = {
   name: 'browse_url',
@@ -71,7 +90,7 @@ export async function decide(ctx: DecisionContext): Promise<Decision> {
   ).join('\n')
 
   const messageHistory = recentMessages.map(m =>
-    `[${m.timestamp}] ${m.role === 'user' ? ctx.userName : 'you'}: ${m.content}`
+    `[${m.timestamp}] ${m.role === 'user' ? ctx.config.userName : 'you'}: ${m.content}`
   ).join('\n')
 
   const actionHistory = recentActions.map(a =>
@@ -81,7 +100,7 @@ export async function decide(ctx: DecisionContext): Promise<Decision> {
   const currentMood = recentMoods[recentMoods.length - 1] ?? recentMoods[0]
 
   const userMessage = ctx.incomingMessage
-    ? `${ctx.userName} just sent you a message: "${ctx.incomingMessage}"\n\n`
+    ? `${ctx.config.userName} just sent you a message: "${ctx.incomingMessage}"\n\n`
     : ''
 
   const prompt = `${userMessage}It's ${ctx.currentTime}.
@@ -108,7 +127,7 @@ What do you do right now?`
     const response = await client.messages.create({
       model: 'claude-opus-4-7',
       max_tokens: 2048,
-      system: SYSTEM_PROMPT,
+      system: buildSystemPrompt(ctx.config),
       tools: [BROWSE_TOOL],
       messages,
     })
