@@ -1,6 +1,10 @@
 import puppeteer from 'puppeteer'
 
 export async function browseUrl(url: string): Promise<string> {
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'https://' + url
+  }
+
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] })
   try {
     const page = await browser.newPage()

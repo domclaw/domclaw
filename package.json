@@ -6,7 +6,11 @@
   "scripts": {
     "start": "tsx src/interfaces/daemon.ts",
     "cli": "tsx src/interfaces/cli.ts",
-    "db:init": "tsx src/db/init.ts"
+    "db:init": "tsx src/db/init.ts",
+    "daemon:start": "pm2 start ecosystem.config.cjs",
+    "daemon:stop": "pm2 stop domclaw",
+    "daemon:logs": "pm2 logs domclaw",
+    "daemon:status": "pm2 status"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.93.0",

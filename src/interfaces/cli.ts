@@ -1,13 +1,9 @@
 import 'dotenv/config'
+import * as net from 'net'
 import * as readline from 'readline'
-import { decide } from '../core/decide.js'
-import { executeIgnore } from '../actions/ignore.js'
-import { executeMessage } from '../actions/message.js'
-import { insertMessage, insertMoodSnapshot } from '../db/queries.js'
-import { configExists, loadConfig } from '../config.js'
-import { runOnboarding } from './onboard.js'
+import { SOCKET_PATH, encode, decode } from '../ipc.js'
 import { printBanner } from '../ui/banner.js'
-import type { DomclawConfig } from '../config.js'
+import type { DaemonMessage } from '../ipc.js'
 
 const RESET = '\x1b[0m'
 const DIM = '\x1b[2m'
@@ -23,89 +19,107 @@ function moodBar(label: string, value: number): string {
   return `${GRAY}${label.padEnd(10)}${CYAN}${filled}${DIM}${empty}${RESET} ${value}/10`
 }
 
-function printMood(decision: Awaited<ReturnType<typeof decide>>): void {
-  const m = decision.moodUpdate
+function printMood(m: DaemonMessage & { type: 'decision' }): void {
+  const mood = m.moodUpdate
   console.log(`\n${DIM}┌─ mood ────────────────────────${RESET}`)
-  console.log(`${DIM}│${RESET} ${moodBar('energy', m.energy)}`)
-  console.log(`${DIM}│${RESET} ${moodBar('irritation', m.irritation)}`)
-  console.log(`${DIM}│${RESET} ${moodBar('boredom', m.boredom)}`)
-  console.log(`${DIM}│${RESET} ${moodBar('interest', m.interest)}`)
-  console.log(`${DIM}│${RESET} ${GRAY}"${m.summary}"${RESET}`)
-  console.log(`${DIM}└───────────────────────────────${RESET}`)
+  console.log(`${DIM}│${RESET} ${moodBar('energy', mood.energy)}`)
+  console.log(`${DIM}│${RESET} ${moodBar('irritation', mood.irritation)}`)
+  console.log(`${DIM}│${RESET} ${moodBar('boredom', mood.boredom)}`)
+  console.log(`${DIM}│${RESET} ${moodBar('interest', mood.interest)}`)
+  console.log(`${DIM}│${RESET} ${GRAY}"${mood.summary}"${RESET}`)
+  console.log(`${DIM}└───────────────────────────────${RESET}\n`)
 }
 
-async function runTick(config: DomclawConfig, incomingMessage: string): Promise<void> {
-  const currentTime = new Date().toLocaleString('en-US', {
-    weekday: 'long',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  })
-
-  console.log(`\n${DIM}[${currentTime}] thinking...${RESET}`)
-
-  const decision = await decide({ config, currentTime, incomingMessage })
-
-  insertMoodSnapshot(
-    decision.moodUpdate.energy,
-    decision.moodUpdate.irritation,
-    decision.moodUpdate.boredom,
-    decision.moodUpdate.interest,
-    decision.moodUpdate.summary
-  )
-
-  console.log(`\n${YELLOW}${BOLD}decision: ${decision.action.toUpperCase()}${RESET}`)
-  console.log(`${DIM}reasoning: ${decision.reasoning}${RESET}`)
-
-  switch (decision.action) {
-    case 'ignore':
-      executeIgnore(decision.reasoning)
-      console.log(`\n${RED}${BOLD}[${config.domName} read it and said nothing]${RESET}`)
-      break
-    case 'message':
-    case 'voice_memo': {
-      const content = decision.content ?? ''
-      executeMessage(content, decision.reasoning)
-      console.log(`\n${BOLD}${config.domName}:${RESET} ${content}`)
-      break
-    }
-    case 'browse':
-      console.log(`\n${CYAN}[browsing: ${decision.target ?? 'somewhere'}]${RESET}`)
-      break
-    case 'buy':
-      console.log(`\n${RED}[buying: ${decision.target ?? 'something'}]${RESET}`)
-      break
+function printHistory(messages: DaemonMessage extends { type: 'history' } ? DaemonMessage['messages'] : never): void {
+  if (messages.length === 0) return
+  console.log(`${DIM}── recent conversation ──────────${RESET}`)
+  for (const m of messages) {
+    const who = m.role === 'user' ? `${DIM}you${RESET}` : `${BOLD}domclaw${RESET}`
+    console.log(`${who}: ${m.content}`)
   }
-
-  printMood(decision)
+  console.log(`${DIM}─────────────────────────────────${RESET}\n`)
 }
 
 async function main(): Promise<void> {
   printBanner()
 
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: process.stdin.isTTY })
-  const config = configExists() ? loadConfig() : await runOnboarding(rl)
+  const socket = net.createConnection(SOCKET_PATH)
 
-  console.log(`${BOLD}${config.domName}${RESET} ${DIM}— cli mode${RESET}`)
-  console.log(`${DIM}type a message and press enter. she decides what to do.${RESET}`)
-  console.log(`${DIM}ctrl+c to exit\n${RESET}`)
+  socket.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'ENOENT' || err.code === 'ECONNREFUSED') {
+      console.error(`${RED}daemon is not running. start it with: npm start${RESET}`)
+    } else {
+      console.error(`${RED}connection error: ${err.message}${RESET}`)
+    }
+    process.exit(1)
+  })
+
+  socket.on('connect', () => {
+    console.log(`${DIM}connected to daemon${RESET}\n`)
+  })
+
+  socket.on('close', () => {
+    console.log(`\n${DIM}disconnected from daemon${RESET}`)
+    process.exit(0)
+  })
+
+  let buffer = ''
+  socket.on('data', (chunk) => {
+    buffer += chunk.toString()
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    for (const line of lines) {
+      if (!line.trim()) continue
+      try {
+        const msg = decode<DaemonMessage>(line)
+        handleDaemonMessage(msg)
+      } catch {}
+    }
+  })
+
+  function handleDaemonMessage(msg: DaemonMessage): void {
+    switch (msg.type) {
+      case 'history':
+        printHistory(msg.messages)
+        break
+      case 'tick_start':
+        process.stdout.write(`${DIM}thinking...${RESET}\n`)
+        break
+      case 'decision': {
+        console.log(`${YELLOW}${BOLD}${msg.action.toUpperCase()}${RESET} ${DIM}— ${msg.reasoning}${RESET}`)
+        if (msg.action === 'message' || msg.action === 'voice_memo') {
+          console.log(`\n${BOLD}domclaw:${RESET} ${msg.content ?? ''}`)
+        } else if (msg.action === 'ignore') {
+          console.log(`\n${RED}[she read it and said nothing]${RESET}`)
+        } else if (msg.action === 'browse') {
+          console.log(`\n${CYAN}[browsing]${RESET}`)
+        } else if (msg.action === 'buy') {
+          console.log(`\n${RED}[bought something]${RESET}`)
+        }
+        printMood(msg)
+        break
+      }
+      case 'error':
+        console.error(`${RED}daemon error: ${msg.message}${RESET}`)
+        break
+    }
+  }
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: process.stdin.isTTY })
 
   const askNext = (): void => {
-    rl.question(`${DIM}you: ${RESET}`, async (input) => {
+    rl.question(`${DIM}you: ${RESET}`, (input) => {
       const trimmed = input.trim()
-      if (!trimmed) {
-        askNext()
-        return
+      if (trimmed) {
+        socket.write(encode({ type: 'message', content: trimmed }))
       }
-
-      insertMessage('user', trimmed)
-      await runTick(config, trimmed)
-      console.log()
       askNext()
     })
   }
 
   askNext()
+
+  rl.on('close', () => socket.destroy())
 }
 
 main().catch(console.error)
