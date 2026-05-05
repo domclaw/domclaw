@@ -63,21 +63,25 @@ You can run her locally in **CLI mode** to watch her reasoning in real time — 
 domclaw/
   src/
     core/
-      loop.ts          # cron loop — the heartbeat
-      mood.ts          # mood state machine
-      decide.ts        # LLM decision logic
+      loop.ts          # tick — called by daemon on cron schedule
+      decide.ts        # agentic LLM loop with tool use
     actions/
-      message.ts       # send Telegram message
-      ignore.ts        # do nothing (explicit, logged)
-      browse.ts        # browser MCP
-      buy.ts           # Stripe
-      voice.ts         # ElevenLabs
+      message.ts       # log + persist outbound messages
+      ignore.ts        # explicit do-nothing action (logged)
+    tools/
+      browser.ts       # puppeteer — browse any URL
     interfaces/
-      telegram.ts      # Telegram bot
-      cli.ts           # CLI chat + reasoning view
+      daemon.ts        # npm start — autonomous cron loop
+      cli.ts           # npm run cli — interactive with mood display
+      onboard.ts       # first-run setup
+      telegram.ts      # Phase 2
+    ui/
+      banner.ts        # DOMCLAW ASCII banner
     db/
       schema.sql       # SQLite schema
-      mood.ts          # mood read/write
+      client.ts        # db connection + auto-init
+      queries.ts       # typed read/write helpers
+    config.ts          # load/write .domclaw.json
 ```
 
 ---
@@ -85,27 +89,29 @@ domclaw/
 ## Setup
 
 ```bash
-git clone https://github.com/your-org/domclaw
+git clone https://github.com/domclaw/domclaw
 cd domclaw
-cp .env.example .env
-# fill in your keys
 npm install
-npm run start        # Telegram bot
-npm run cli          # local CLI with visible reasoning
+cp .env.example .env
+# add your ANTHROPIC_API_KEY to .env
 ```
 
-She'll handle the rest.
+Then run her:
+
+```bash
+npm run cli     # interactive CLI — watch her reasoning in real time
+npm start       # daemon mode — she runs autonomously every 5 minutes
+```
+
+First launch runs onboarding. She asks your name, her name, pronouns, intensity, and spending limit. After that she boots directly.
 
 ---
 
 ## Configuration
 
-During onboarding you set:
+`.domclaw.json` is written on first run and gitignored. Edit it directly to change settings.
 
-- **Tool permissions** — what she's allowed to do
-- **Spending limit** — hard cap, no receipts
-
-After that, she decides.
+`.env` holds API keys only — `ANTHROPIC_API_KEY` is required, everything else is optional until you enable those features.
 
 ---
 
