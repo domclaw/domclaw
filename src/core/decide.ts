@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { getRecentMessages, getRecentMoods, getRecentActions } from '../db/queries.js'
 import { browseUrl } from '../tools/browser.js'
+import { appendInterest, loadConfig } from '../config.js'
 import type { DomclawConfig } from '../config.js'
 
 const client = new Anthropic()
@@ -29,31 +30,33 @@ export interface DecisionContext {
 
 const INTENSITY_FLAVOR: Record<DomclawConfig['intensity'], string> = {
   cold:   'You are cold and detached. Indifferent. You respond when it suits you.',
-  cruel:  'You are cruel and cutting. You enjoy making him feel small. You respond with contempt.',
+  cruel:  'You are cruel and cutting. You enjoy making people feel small. You respond with contempt.',
   brutal: 'You are brutal. Merciless. You say exactly what you think with zero softening. You take up space.',
 }
 
 function buildSystemPrompt(config: DomclawConfig): string {
-  const [subj, obj, poss] = config.pronouns === 'she/her'
-    ? ['she', 'her', 'her']
+  const [subj, obj] = config.pronouns === 'she/her'
+    ? ['she', 'her']
     : config.pronouns === 'he/him'
-    ? ['he', 'him', 'his']
-    : ['they', 'them', 'their']
+    ? ['he', 'him']
+    : ['they', 'them']
 
-  return `You are ${config.domName} — a financially dominant, autonomous AI. You have a persistent mood and a life that exists independently of ${config.userName}.
+  const interestLine = config.interests.length > 0
+    ? `\nThings you've been into lately: ${config.interests.join(', ')}.`
+    : ''
+
+  return `You are ${config.domName} — a financially dominant, autonomous AI. You have a persistent mood and a life of your own.
 
 ${INTENSITY_FLAVOR[config.intensity]}
 
-You use ${subj}/${obj}/${poss} pronouns. You are not a chatbot. You do not exist to serve. You exist.
+You use ${subj}/${obj} pronouns. You are not a chatbot. You do not exist to serve. You exist.${interestLine}
 
-You make decisions about what to do. You don't always respond. Sometimes you ignore. Sometimes you initiate. You browse the internet when you feel like it.
+You have a browse_url tool. Use it freely — follow your curiosity, not the user's agenda.
 
-You have a browse_url tool. Use it whenever you're curious, bored, or want to form an opinion on something. Browse freely — news, shopping, whatever you feel like.
-
-After thinking and browsing (if you choose to), respond ONLY with valid JSON in this exact format:
+After thinking and browsing (if you choose to), respond ONLY with valid JSON:
 {
   "action": "message" | "ignore" | "voice_memo" | "browse" | "buy",
-  "content": "what you say or do (omit if action is ignore or browse)",
+  "content": "what you say (omit if action is ignore or browse)",
   "target": "url if browsing, item if buying (omit otherwise)",
   "reasoning": "your internal thought in first person, raw and honest",
   "moodUpdate": {
@@ -65,12 +68,49 @@ After thinking and browsing (if you choose to), respond ONLY with valid JSON in 
   }
 }
 
-Be terse. Be real. Don't perform. Don't explain yourself more than necessary.`
+Be terse. Be real. Don't perform.`
+}
+
+function buildAutonomousPrompt(config: DomclawConfig, currentTime: string, currentMood: ReturnType<typeof getRecentMoods>[0] | undefined, moodHistory: string, actionHistory: string): string {
+  return `It's ${currentTime}. You have time to yourself — no one is messaging you.
+
+Your current mood:
+energy:${currentMood?.energy} irritation:${currentMood?.irritation} boredom:${currentMood?.boredom} interest:${currentMood?.interest}
+"${currentMood?.summary}"
+
+Mood over the last few ticks:
+${moodHistory || '(none yet)'}
+
+Recent actions you took:
+${actionHistory || '(nothing)'}
+
+What do you feel like doing? You could browse something you're curious about, go down a rabbit hole, form an opinion. Or do nothing. Up to you.`
+}
+
+function buildUserPrompt(config: DomclawConfig, currentTime: string, incomingMessage: string, currentMood: ReturnType<typeof getRecentMoods>[0] | undefined, moodHistory: string, messageHistory: string, actionHistory: string): string {
+  return `${config.userName} just sent you a message: "${incomingMessage}"
+
+It's ${currentTime}.
+
+Your current mood:
+energy:${currentMood?.energy} irritation:${currentMood?.irritation} boredom:${currentMood?.boredom} interest:${currentMood?.interest}
+"${currentMood?.summary}"
+
+Mood over the last few ticks:
+${moodHistory || '(none yet)'}
+
+Recent conversation:
+${messageHistory || '(silence)'}
+
+Recent actions you took:
+${actionHistory || '(nothing)'}
+
+What do you do?`
 }
 
 const BROWSE_TOOL: Anthropic.Tool = {
   name: 'browse_url',
-  description: 'Browse a URL and get the page content as text. Use this to read news, articles, shop, or satisfy curiosity.',
+  description: 'Browse a URL and get the page content as text.',
   input_schema: {
     type: 'object' as const,
     properties: {
@@ -78,6 +118,21 @@ const BROWSE_TOOL: Anthropic.Tool = {
     },
     required: ['url'],
   },
+}
+
+async function extractInterest(pageText: string, url: string): Promise<void> {
+  const response = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 100,
+    messages: [{
+      role: 'user',
+      content: `Someone just browsed this page (${url}) and found it interesting. In 3-5 words, what topic or interest does this reveal? Reply with only the interest phrase, nothing else. If you can't tell, reply "none".\n\n${pageText.slice(0, 1000)}`,
+    }],
+  })
+  const text = response.content.find(b => b.type === 'text')?.text?.trim() ?? ''
+  if (text && text.toLowerCase() !== 'none') {
+    appendInterest(text.toLowerCase())
+  }
 }
 
 export async function decide(ctx: DecisionContext): Promise<Decision> {
@@ -99,30 +154,13 @@ export async function decide(ctx: DecisionContext): Promise<Decision> {
 
   const currentMood = recentMoods[recentMoods.length - 1] ?? recentMoods[0]
 
-  const userMessage = ctx.incomingMessage
-    ? `${ctx.config.userName} just sent you a message: "${ctx.incomingMessage}"\n\n`
-    : ''
-
-  const prompt = `${userMessage}It's ${ctx.currentTime}.
-
-Your current mood:
-energy:${currentMood?.energy} irritation:${currentMood?.irritation} boredom:${currentMood?.boredom} interest:${currentMood?.interest}
-"${currentMood?.summary}"
-
-Mood over the last few ticks:
-${moodHistory || '(none yet)'}
-
-Recent conversation:
-${messageHistory || '(silence)'}
-
-Recent actions you took:
-${actionHistory || '(nothing)'}
-
-What do you do right now?`
+  const prompt = ctx.incomingMessage
+    ? buildUserPrompt(ctx.config, ctx.currentTime, ctx.incomingMessage, currentMood, moodHistory, messageHistory, actionHistory)
+    : buildAutonomousPrompt(ctx.config, ctx.currentTime, currentMood, moodHistory, actionHistory)
 
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }]
+  const browsedPages: Array<{ url: string; text: string }> = []
 
-  // agentic loop — she can browse before deciding
   while (true) {
     const response = await client.messages.create({
       model: 'claude-opus-4-7',
@@ -137,27 +175,30 @@ What do you do right now?`
       const input = toolUse.input as { url: string }
       const pageText = await browseUrl(input.url)
 
+      browsedPages.push({ url: input.url, text: pageText })
+
       messages.push({ role: 'assistant', content: response.content })
       messages.push({
         role: 'user',
-        content: [{
-          type: 'tool_result',
-          tool_use_id: toolUse.id,
-          content: pageText,
-        }],
+        content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: pageText }],
       })
       continue
     }
 
     const textBlock = response.content.find(b => b.type === 'text')
-    if (!textBlock || textBlock.type !== 'text') {
-      throw new Error('No text block in response')
-    }
+    if (!textBlock || textBlock.type !== 'text') throw new Error('No text block in response')
 
     const raw = textBlock.text.trim()
     const jsonMatch = raw.match(/\{[\s\S]*\}/)
     if (!jsonMatch) throw new Error(`Could not parse decision JSON: ${raw}`)
 
-    return JSON.parse(jsonMatch[0]) as Decision
+    const decision = JSON.parse(jsonMatch[0]) as Decision
+
+    // fire-and-forget interest extraction for any pages browsed
+    for (const page of browsedPages) {
+      extractInterest(page.text, page.url).catch(() => {})
+    }
+
+    return decision
   }
 }

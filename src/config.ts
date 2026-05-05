@@ -9,6 +9,7 @@ export interface DomclawConfig {
   pronouns: 'she/her' | 'he/him' | 'they/them'
   intensity: 'cold' | 'cruel' | 'brutal'
   spendingLimitCents: number
+  interests: string[]
 }
 
 export function configExists(): boolean {
@@ -16,9 +17,18 @@ export function configExists(): boolean {
 }
 
 export function loadConfig(): DomclawConfig {
-  return JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as DomclawConfig
+  const raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as DomclawConfig
+  return { interests: [], ...raw }
 }
 
 export function writeConfig(config: DomclawConfig): void {
   writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2))
+}
+
+export function appendInterest(interest: string): void {
+  const config = loadConfig()
+  if (!config.interests.includes(interest)) {
+    config.interests.push(interest)
+    writeConfig(config)
+  }
 }
