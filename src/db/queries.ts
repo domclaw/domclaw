@@ -1,5 +1,23 @@
 import db from './client.js'
 
+export interface BrowseHistoryEntry {
+  id: number
+  url: string
+  summary: string
+  timestamp: string
+}
+
+export interface Interest {
+  id: number
+  topic: string
+  depth: number
+  threads: string
+  note: string
+  status: 'active' | 'cooling' | 'dead'
+  last_engaged: string
+  created_at: string
+}
+
 export interface Message {
   id: number
   role: 'user' | 'domclaw'
@@ -65,6 +83,41 @@ export function getRecentMoods(limit = 6): MoodSnapshot[] {
   return db.prepare(`
     SELECT * FROM mood_snapshots ORDER BY timestamp DESC LIMIT ?
   `).all(limit) as MoodSnapshot[]
+}
+
+export function insertBrowseHistory(url: string, summary: string): void {
+  db.prepare(`INSERT INTO browse_history (url, summary) VALUES (?, ?)`).run(url, summary)
+}
+
+export function getRecentBrowseHistory(limit = 10): BrowseHistoryEntry[] {
+  return db.prepare(`SELECT * FROM browse_history ORDER BY timestamp DESC LIMIT ?`).all(limit) as BrowseHistoryEntry[]
+}
+
+export function getActiveInterests(): Interest[] {
+  return db.prepare(`SELECT * FROM interests WHERE status != 'dead' ORDER BY depth DESC, last_engaged DESC`).all() as Interest[]
+}
+
+export function upsertInterest(topic: string, depth: number, threads: string[], note: string, status: 'active' | 'cooling'): void {
+  db.prepare(`
+    INSERT INTO interests (topic, depth, threads, note, status, last_engaged)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(topic) DO UPDATE SET
+      depth = excluded.depth,
+      threads = excluded.threads,
+      note = excluded.note,
+      status = excluded.status,
+      last_engaged = datetime('now')
+  `).run(topic, depth, JSON.stringify(threads), note, status)
+}
+
+export function decayInterests(): void {
+  // decay depth by 1 for anything not engaged this tick
+  db.prepare(`
+    UPDATE interests
+    SET depth = depth - 1,
+        status = CASE WHEN depth - 1 <= 0 THEN 'dead' WHEN depth - 1 <= 3 THEN 'cooling' ELSE 'active' END
+    WHERE last_engaged < datetime('now', '-4 minutes')
+  `).run()
 }
 
 export function insertMoodSnapshot(

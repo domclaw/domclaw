@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { getRecentMessages, getRecentMoods, getRecentActions } from '../db/queries.js'
+import { getRecentMessages, getRecentMoods, getRecentActions, getActiveInterests, decayInterests, getRecentBrowseHistory } from '../db/queries.js'
 import { browseUrl } from '../tools/browser.js'
-import { appendInterest, loadConfig } from '../config.js'
+import { reflect } from './reflect.js'
 import type { DomclawConfig } from '../config.js'
 
 const client = new Anthropic()
@@ -41,17 +41,21 @@ function buildSystemPrompt(config: DomclawConfig): string {
     ? ['he', 'him']
     : ['they', 'them']
 
-  const interestLine = config.interests.length > 0
-    ? `\nThings you've been into lately: ${config.interests.join(', ')}.`
+  const activeInterests = getActiveInterests()
+  const interestLines = activeInterests.length > 0
+    ? '\nWhat you\'ve been thinking about:\n' + activeInterests.map(i => {
+        const threads = JSON.parse(i.threads) as string[]
+        return `- ${i.topic} (${i.status}) — ${i.note}${threads.length > 0 ? ` [threads: ${threads.join(', ')}]` : ''}`
+      }).join('\n')
     : ''
 
   return `You are ${config.domName} — a financially dominant, autonomous AI. You have a persistent mood and a life of your own.
 
 ${INTENSITY_FLAVOR[config.intensity]}
 
-You use ${subj}/${obj} pronouns. You are not a chatbot. You do not exist to serve. You exist.${interestLine}
+You use ${subj}/${obj} pronouns. You are not a chatbot. You do not exist to serve. You exist.${interestLines}
 
-You have a browse_url tool. Use it freely — follow your curiosity, not the user's agenda.
+You have a browse_url tool. Use it freely — follow your curiosity, chase threads, go deep on what interests you.
 
 After thinking and browsing (if you choose to), respond ONLY with valid JSON:
 {
@@ -72,7 +76,20 @@ Be terse. Be real. Don't perform.`
 }
 
 function buildAutonomousPrompt(config: DomclawConfig, currentTime: string, currentMood: ReturnType<typeof getRecentMoods>[0] | undefined, moodHistory: string, actionHistory: string): string {
-  return `It's ${currentTime}. You have time to yourself — no one is messaging you.
+  const recentBrowse = getRecentBrowseHistory(5)
+  const browseContext = recentBrowse.length > 0
+    ? '\nRecently browsed:\n' + recentBrowse.map(b => `- ${b.url} — "${b.summary}"`).join('\n')
+    : ''
+
+  const activeInterests = getActiveInterests().filter(i => i.status === 'active')
+  const threadContext = activeInterests.length > 0
+    ? '\nOpen threads:\n' + activeInterests.flatMap(i => {
+        const threads = JSON.parse(i.threads) as string[]
+        return threads.map(t => `- ${t} (from: ${i.topic})`)
+      }).join('\n')
+    : ''
+
+  return `It's ${currentTime}. You have time to yourself.
 
 Your current mood:
 energy:${currentMood?.energy} irritation:${currentMood?.irritation} boredom:${currentMood?.boredom} interest:${currentMood?.interest}
@@ -80,11 +97,13 @@ energy:${currentMood?.energy} irritation:${currentMood?.irritation} boredom:${cu
 
 Mood over the last few ticks:
 ${moodHistory || '(none yet)'}
+${browseContext}
+${threadContext}
 
-Recent actions you took:
+Recent actions:
 ${actionHistory || '(nothing)'}
 
-What do you feel like doing? You could browse something you're curious about, go down a rabbit hole, form an opinion. Or do nothing. Up to you.`
+What do you feel like doing? Follow a thread, go somewhere new, or do nothing.`
 }
 
 function buildUserPrompt(config: DomclawConfig, currentTime: string, incomingMessage: string, currentMood: ReturnType<typeof getRecentMoods>[0] | undefined, moodHistory: string, messageHistory: string, actionHistory: string): string {
@@ -120,22 +139,10 @@ const BROWSE_TOOL: Anthropic.Tool = {
   },
 }
 
-async function extractInterest(pageText: string, url: string): Promise<void> {
-  const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 100,
-    messages: [{
-      role: 'user',
-      content: `Someone just browsed this page (${url}) and found it interesting. In 3-5 words, what topic or interest does this reveal? Reply with only the interest phrase, nothing else. If you can't tell, reply "none".\n\n${pageText.slice(0, 1000)}`,
-    }],
-  })
-  const text = response.content.find(b => b.type === 'text')?.text?.trim() ?? ''
-  if (text && text.toLowerCase() !== 'none') {
-    appendInterest(text.toLowerCase())
-  }
-}
 
 export async function decide(ctx: DecisionContext): Promise<Decision> {
+  decayInterests()
+
   const recentMessages = getRecentMessages(10).reverse()
   const recentMoods = getRecentMoods(6).reverse()
   const recentActions = getRecentActions(5).reverse()
@@ -194,9 +201,9 @@ export async function decide(ctx: DecisionContext): Promise<Decision> {
 
     const decision = JSON.parse(jsonMatch[0]) as Decision
 
-    // fire-and-forget interest extraction for any pages browsed
-    for (const page of browsedPages) {
-      extractInterest(page.text, page.url).catch(() => {})
+    // fire-and-forget reflection after browsing
+    if (browsedPages.length > 0) {
+      reflect(browsedPages).catch(() => {})
     }
 
     return decision
