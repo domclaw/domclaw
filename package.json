@@ -4,7 +4,7 @@
   "description": "Autonomous AI agent with a mean girlfriend personality",
   "type": "module",
   "scripts": {
-    "start": "tsx src/interfaces/telegram.ts",
+    "start": "tsx src/interfaces/daemon.ts",
     "cli": "tsx src/interfaces/cli.ts",
     "db:init": "tsx src/db/init.ts"
   },
