@@ -1,7 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { getActiveInterests, upsertInterest, insertBrowseHistory } from '../db/queries.js'
-
-const client = new Anthropic()
+import { generate } from './llm.js'
+import type { DomclawConfig } from '../config.js'
 
 interface InterestUpdate {
   topic: string
@@ -16,7 +15,7 @@ interface ReflectionOutput {
   browseSummary: string
 }
 
-export async function reflect(browsedPages: Array<{ url: string; text: string }>): Promise<void> {
+export async function reflect(config: DomclawConfig, browsedPages: Array<{ url: string; text: string }>): Promise<void> {
   if (browsedPages.length === 0) return
 
   const activeInterests = getActiveInterests()
@@ -31,12 +30,10 @@ export async function reflect(browsedPages: Array<{ url: string; text: string }>
     `URL: ${p.url}\n${p.text.slice(0, 1500)}`
   ).join('\n\n---\n\n')
 
-  const response = await client.messages.create({
-    model: 'claude-opus-4-7',
-    max_tokens: 1024,
-    messages: [{
-      role: 'user',
-      content: `You just browsed these pages:
+  const text = await generate(config, {
+    fast: true,
+    system: 'You are reflecting on what you just browsed. Respond only with valid JSON.',
+    prompt: `You just browsed these pages:
 
 ${pagesContext}
 
@@ -60,21 +57,17 @@ Respond ONLY with valid JSON:
 }
 
 Only include interests you actually care about after this session. If something bored you, set status to "cooling" and depth low. If you want to go deeper, set depth high and name specific threads.`,
-    }],
   })
 
-  const text = response.content.find(b => b.type === 'text')?.text?.trim() ?? ''
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) return
 
   const output = JSON.parse(jsonMatch[0]) as ReflectionOutput
 
-  // persist browse history
   for (const page of browsedPages) {
     insertBrowseHistory(page.url, output.browseSummary)
   }
 
-  // upsert interest updates
   for (const update of output.interests) {
     upsertInterest(update.topic, update.depth, update.threads, update.note, update.status)
   }

@@ -13,7 +13,11 @@
     "daemon:status": "pm2 status"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.75",
+    "@ai-sdk/openai": "^3.0.61",
+    "@ai-sdk/xai": "^3.0.88",
     "@anthropic-ai/sdk": "^0.93.0",
+    "ai": "^6.0.175",
     "better-sqlite3": "^11.0.0",
     "dotenv": "^16.0.0",
     "node-cron": "^3.0.3",

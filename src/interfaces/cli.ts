@@ -30,7 +30,7 @@ function printMood(m: DaemonMessage & { type: 'decision' }): void {
   console.log(`${DIM}└───────────────────────────────${RESET}\n`)
 }
 
-function printHistory(messages: DaemonMessage extends { type: 'history' } ? DaemonMessage['messages'] : never): void {
+function printHistory(messages: Extract<DaemonMessage, { type: 'history' }>['messages']): void {
   if (messages.length === 0) return
   console.log(`${DIM}── recent conversation ──────────${RESET}`)
   for (const m of messages) {

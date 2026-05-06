@@ -1,5 +1,6 @@
 import { readFileSync, existsSync, writeFileSync } from 'fs'
 import { join } from 'path'
+import type { Provider } from './core/llm.js'
 
 const CONFIG_PATH = join(process.cwd(), '.domclaw.json')
 
@@ -10,6 +11,9 @@ export interface DomclawConfig {
   intensity: 'cold' | 'cruel' | 'brutal'
   spendingLimitCents: number
   userGender: 'male' | 'female' | 'unspecified'
+  provider: Provider
+  apiKey: string
+  model?: string
 }
 
 export function configExists(): boolean {

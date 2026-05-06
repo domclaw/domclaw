@@ -2,6 +2,7 @@ import * as readline from 'readline'
 import { writeFileSync } from 'fs'
 import { join } from 'path'
 import type { DomclawConfig } from '../config.js'
+import { MODELS, DEFAULT_MODELS, type Provider } from '../core/llm.js'
 
 const RESET = '\x1b[0m'
 const DIM = '\x1b[2m'
@@ -69,7 +70,33 @@ export async function runOnboarding(rl: readline.Interface): Promise<DomclawConf
   const spendingInput = (await ask(rl, label(`monthly spending limit ${hint('(e.g. 50 for $50, enter to skip → $20)')}: `))).trim()
   const spendingLimitCents = spendingInput ? Math.round(parseFloat(spendingInput) * 100) : 2000
 
-  const config: DomclawConfig = { userName, domName, pronouns, intensity, spendingLimitCents, userGender }
+  // provider
+  console.log()
+  console.log(hint('  1. anthropic'))
+  console.log(hint('  2. openai'))
+  console.log(hint('  3. grok'))
+  const providerInput = (await ask(rl, label('provider [1-3]: '))).trim()
+  const providerMap: Record<string, Provider> = {
+    '1': 'anthropic', '2': 'openai', '3': 'grok',
+  }
+  const provider = providerMap[providerInput] ?? 'anthropic'
+
+  // api key
+  console.log()
+  const apiKey = (await ask(rl, label(`${provider} api key: `))).trim()
+
+  // model
+  console.log()
+  const modelList = MODELS[provider]
+  modelList.forEach((m, i) => {
+    const isDefault = m.id === DEFAULT_MODELS[provider]
+    console.log(hint(`  ${i + 1}. ${m.label}${isDefault ? ' ← default' : ''}`))
+  })
+  const modelInput = (await ask(rl, label(`model [1-${modelList.length}] ${hint('(enter for default)')}: `))).trim()
+  const modelIndex = parseInt(modelInput, 10) - 1
+  const model = modelList[modelIndex]?.id ?? DEFAULT_MODELS[provider]
+
+  const config: DomclawConfig = { userName, domName, pronouns, intensity, spendingLimitCents, userGender, provider, apiKey, model }
   writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2))
 
   console.log(`\n${RED}${BOLD}${domName} is online.${RESET}\n`)

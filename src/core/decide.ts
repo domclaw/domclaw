@@ -1,10 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { getRecentMessages, getRecentMoods, getRecentActions, getActiveInterests, decayInterests, getRecentBrowseHistory } from '../db/queries.js'
 import { browseUrl } from '../tools/browser.js'
 import { reflect } from './reflect.js'
+import { generate } from './llm.js'
 import type { DomclawConfig } from '../config.js'
-
-const client = new Anthropic()
 
 export type ActionType = 'message' | 'ignore' | 'voice_memo' | 'browse' | 'buy'
 
@@ -139,19 +137,6 @@ ${actionHistory || '(nothing)'}
 What do you do?`
 }
 
-const BROWSE_TOOL: Anthropic.Tool = {
-  name: 'browse_url',
-  description: 'Browse a URL and get the page content as text.',
-  input_schema: {
-    type: 'object' as const,
-    properties: {
-      url: { type: 'string', description: 'The URL to browse' },
-    },
-    required: ['url'],
-  },
-}
-
-
 export async function decide(ctx: DecisionContext): Promise<Decision> {
   decayInterests()
 
@@ -177,47 +162,31 @@ export async function decide(ctx: DecisionContext): Promise<Decision> {
     ? buildUserPrompt(ctx.config, ctx.currentTime, ctx.incomingMessage, currentMood, moodHistory, messageHistory, actionHistory)
     : buildAutonomousPrompt(ctx.config, ctx.currentTime, currentMood, moodHistory, actionHistory)
 
-  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }]
   const browsedPages: Array<{ url: string; text: string }> = []
 
-  while (true) {
-    const response = await client.messages.create({
-      model: 'claude-opus-4-7',
-      max_tokens: 2048,
-      system: buildSystemPrompt(ctx.config),
-      tools: [BROWSE_TOOL],
-      messages,
-    })
+  const raw = await generate(ctx.config, {
+    system: buildSystemPrompt(ctx.config),
+    prompt,
+    tools: {
+      browse_url: {
+        description: 'Browse a URL and get the page content as text.',
+        execute: async ({ url }) => {
+          const text = await browseUrl(url)
+          browsedPages.push({ url, text })
+          return text
+        },
+      },
+    },
+  })
 
-    if (response.stop_reason === 'tool_use') {
-      const toolUse = response.content.find(b => b.type === 'tool_use') as Anthropic.ToolUseBlock
-      const input = toolUse.input as { url: string }
-      const pageText = await browseUrl(input.url)
+  const jsonMatch = raw.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) throw new Error(`Could not parse decision JSON: ${raw}`)
 
-      browsedPages.push({ url: input.url, text: pageText })
+  const decision = JSON.parse(jsonMatch[0]) as Decision
 
-      messages.push({ role: 'assistant', content: response.content })
-      messages.push({
-        role: 'user',
-        content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: pageText }],
-      })
-      continue
-    }
-
-    const textBlock = response.content.find(b => b.type === 'text')
-    if (!textBlock || textBlock.type !== 'text') throw new Error('No text block in response')
-
-    const raw = textBlock.text.trim()
-    const jsonMatch = raw.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error(`Could not parse decision JSON: ${raw}`)
-
-    const decision = JSON.parse(jsonMatch[0]) as Decision
-
-    // fire-and-forget reflection after browsing
-    if (browsedPages.length > 0) {
-      reflect(browsedPages).catch(() => {})
-    }
-
-    return decision
+  if (browsedPages.length > 0) {
+    reflect(ctx.config, browsedPages).catch(() => {})
   }
+
+  return decision
 }
