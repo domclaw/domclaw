@@ -9,6 +9,7 @@ export interface DomclawConfig {
   pronouns: 'she/her' | 'he/him' | 'they/them'
   intensity: 'cold' | 'cruel' | 'brutal'
   spendingLimitCents: number
+  userGender: 'male' | 'female' | 'unspecified'
 }
 
 export function configExists(): boolean {

@@ -56,10 +56,20 @@ export async function runOnboarding(rl: readline.Interface): Promise<DomclawConf
   const intensity = intensityMap[intensityInput] ?? 'cold'
 
   console.log()
+  console.log(hint('  1. male'))
+  console.log(hint('  2. female'))
+  console.log(hint('  3. unspecified'))
+  const genderInput = (await ask(rl, label('your gender [1-3]: '))).trim()
+  const genderMap: Record<string, DomclawConfig['userGender']> = {
+    '1': 'male', '2': 'female', '3': 'unspecified',
+  }
+  const userGender = genderMap[genderInput] ?? 'unspecified'
+
+  console.log()
   const spendingInput = (await ask(rl, label(`monthly spending limit ${hint('(e.g. 50 for $50, enter to skip → $20)')}: `))).trim()
   const spendingLimitCents = spendingInput ? Math.round(parseFloat(spendingInput) * 100) : 2000
 
-  const config: DomclawConfig = { userName, domName, pronouns, intensity, spendingLimitCents }
+  const config: DomclawConfig = { userName, domName, pronouns, intensity, spendingLimitCents, userGender }
   writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2))
 
   console.log(`\n${RED}${BOLD}${domName} is online.${RESET}\n`)

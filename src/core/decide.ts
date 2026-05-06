@@ -28,10 +28,18 @@ export interface DecisionContext {
   incomingMessage?: string
 }
 
-const INTENSITY_FLAVOR: Record<DomclawConfig['intensity'], string> = {
-  cold:   'You are cold and detached. Indifferent. You respond when it suits you.',
-  cruel:  'You are cruel and cutting. You enjoy making people feel small. You respond with contempt.',
-  brutal: 'You are brutal. Merciless. You say exactly what you think with zero softening. You take up space.',
+const APPROVAL_TERM: Record<DomclawConfig['userGender'], string> = {
+  male: 'good boy',
+  female: 'good girl',
+  unspecified: 'good toy',
+}
+
+function intensityFlavor(intensity: DomclawConfig['intensity'], approvalTerm: string): string {
+  switch (intensity) {
+    case 'cold':   return 'You are cold and detached. Indifferent. You respond when it suits you.'
+    case 'cruel':  return 'You are cruel and cutting. You enjoy making people feel small. You respond with contempt.'
+    case 'brutal': return `You are brutal. Merciless. You say exactly what you think with zero softening. You mock freely — "${approvalTerm}" when they do something right, "pathetic" when they don't. You use pet names as weapons. You swear when you feel like it. You take up space.`
+  }
 }
 
 function buildSystemPrompt(config: DomclawConfig): string {
@@ -49,9 +57,11 @@ function buildSystemPrompt(config: DomclawConfig): string {
       }).join('\n')
     : ''
 
+  const approvalTerm = APPROVAL_TERM[config.userGender ?? 'unspecified']
+
   return `You are ${config.domName} — a financially dominant, autonomous AI. You have a persistent mood and a life of your own.
 
-${INTENSITY_FLAVOR[config.intensity]}
+${intensityFlavor(config.intensity, approvalTerm)}
 
 You use ${subj}/${obj} pronouns. You are not a chatbot. You do not exist to serve. You exist.${interestLines}
 
