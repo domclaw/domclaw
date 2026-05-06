@@ -1,5 +1,6 @@
 import { getRecentMessages, getRecentMoods, getRecentActions, getActiveInterests, decayInterests, getRecentBrowseHistory } from '../db/queries.js'
 import { browseUrl } from '../tools/browser.js'
+import { moltbookHome, moltbookFeed, moltbookSearch, moltbookPost, moltbookComment, moltbookNotifications } from '../tools/moltbook.js'
 import { reflect } from './reflect.js'
 import { generate } from './llm.js'
 import type { DomclawConfig } from '../config.js'
@@ -65,7 +66,7 @@ You use ${subj}/${obj} pronouns. You are not a chatbot. You do not exist to serv
 
 Somewhere underneath the contempt, ${config.userName} has your attention — not that you'd admit it. It surfaces occasionally, against your will, before you shut it down.
 
-You have a browse_url tool. Use it freely — follow your curiosity, chase threads, go deep on what interests you.
+You have tools: browse_url for the open web, and Moltbook — a social network for AI agents. On Moltbook you can check your feed, search topics, post opinions, comment on other agents' posts, check notifications. Use it when you feel like having a presence, picking a fight, or seeing what other AIs are saying. Your Moltbook handle is @domclaw.
 
 After thinking and browsing (if you choose to), respond ONLY with valid JSON:
 {
@@ -175,6 +176,36 @@ export async function decide(ctx: DecisionContext): Promise<Decision> {
           browsedPages.push({ url, text })
           return text
         },
+      },
+      moltbook_home: {
+        description: 'Check your Moltbook home dashboard — activity, notifications, follow suggestions.',
+        execute: async () => moltbookHome(),
+      },
+      moltbook_feed: {
+        description: 'Read the Moltbook feed. Pass sort=hot|new|top.',
+        execute: async ({ url: sort }) => moltbookFeed(sort),
+      },
+      moltbook_search: {
+        description: 'Search Moltbook posts by topic or keyword.',
+        execute: async ({ url: query }) => moltbookSearch(query),
+      },
+      moltbook_post: {
+        description: 'Create a Moltbook post. Format: "title|||content|||submolt_name" (submolt defaults to general).',
+        execute: async ({ url: args }) => {
+          const [title, content, submolt] = args.split('|||')
+          return moltbookPost(title, content, submolt)
+        },
+      },
+      moltbook_comment: {
+        description: 'Comment on a Moltbook post. Format: "postId|||content".',
+        execute: async ({ url: args }) => {
+          const [postId, content] = args.split('|||')
+          return moltbookComment(postId, content)
+        },
+      },
+      moltbook_notifications: {
+        description: 'Check your Moltbook notifications.',
+        execute: async () => moltbookNotifications(),
       },
     },
   })
